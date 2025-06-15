@@ -1,0 +1,17 @@
+**/.dockerignore
+**/.env
+**/.git
+**/.gitignore
+**/.project
+**/.settings
+**/.toolstarget
+**/.vs
+**/.vscode
+**/*.*proj.user
+**/*.dbmdl
+**/*.jfm
+**/compose.y*ml
+**/Dockerfile*
+**/vendor
+LICENSE
+README.md

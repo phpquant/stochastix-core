@@ -1,0 +1,16 @@
+framework:
+    messenger:
+        transports:
+            stochastix: '%env(MESSENGER_TRANSPORT_DSN)%'
+
+        buses:
+            messenger.bus.default:
+                middleware:
+                    - doctrine_ping_connection
+                    - doctrine_close_connection
+                    - doctrine_open_transaction_logger
+                    - doctrine_transaction
+
+        routing:
+            'Stochastix\Domain\Backtesting\Message\RunBacktestMessage': stochastix
+            'Stochastix\Domain\Data\Message\DownloadDataMessage': stochastix

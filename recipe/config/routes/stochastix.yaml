@@ -1,0 +1,5 @@
+stochastix:
+    resource:
+        path: '@StochastixBundle/src/'
+        namespace: Stochastix\
+    type: attribute

@@ -1,0 +1,34 @@
+stochastix:
+    defaults:
+        # Default symbols to use if not overridden
+        symbols: ['ETH/USDT']
+
+        # Default timeframe (e.g., 1m, 5m, 15m, 1h, 4h, 1d, 1w, 1M)
+        timeframe: '1d'
+
+        # Default start date (YYYY-MM-DD). Set to a specific date or null.
+        # If null, the whole dataset is used.
+        start_date: ~
+
+        # Default end date (YYYY-MM-DD). Set to a specific date or null.
+        # If null, the whole dataset is used.
+        end_date: ~
+
+        # Default starting capital for backtests
+        initial_capital: 10000.0
+
+        # Default currency for calculations and stake
+        stake_currency: 'USDT'
+
+        # Default stake amount per trade (e.g., 100, "2.5%"). Can be null.
+        stake_amount: '2%'
+
+        # Default data source configuration
+        data_source:
+            exchange_id: 'binance'
+
+        commission:
+            type: 'percentage' # Options: 'percentage', 'fixed_per_trade', 'fixed_per_unit'
+            rate: 0.005        # For 'percentage' (0.1%) or 'fixed_per_unit' ($0.001/share)
+            amount: ~          # For 'fixed_per_trade' ($5 per trade)
+            asset: 'USDT'

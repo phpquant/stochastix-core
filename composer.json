@@ -1,0 +1,84 @@
+{
+    "name": "stochastix/core",
+    "description": "Backtesting framework built with Symfony",
+    "type": "symfony-bundle",
+    "license": "MIT",
+    "keywords": [
+        "trading",
+        "algotrading",
+        "backtesting",
+        "quant",
+        "quantitative",
+        "symfony",
+        "symfony-bundle"
+    ],
+    "authors": [
+        {
+            "name": "William Arin",
+            "email": "williamarin.dev@gmail.com"
+        }
+    ],
+    "require": {
+        "ext-bcmath": "*",
+        "ext-ds": "*",
+        "ext-gmp": "*",
+        "ext-trader": "*",
+        "php": ">=8.4",
+        "symfony/dependency-injection": "^7.3",
+        "symfony/framework-bundle": "^7.3",
+        "symfony/console": "^7.3",
+        "symfony/options-resolver": "^7.3",
+        "symfony/http-client": "^7.3",
+        "ccxt/ccxt": "^4.4",
+        "symfony/property-access": "^7.3",
+        "symfony/serializer-pack": "*",
+        "symfony/event-dispatcher": "^7.3",
+        "symfony/stopwatch": "^7.3",
+        "symfony/dotenv": "^7.3",
+        "symfony/validator": "^7.3",
+        "symfony/messenger": "^7.3",
+        "symfony/mercure": "^0.6.5",
+        "symfony/mercure-bundle": "^0.3.9",
+        "symfony/yaml": "^7.3",
+        "symfony/doctrine-messenger": "^7.3",
+        "symfony/orm-pack": "^2.4",
+        "symfony/cache": "^7.3",
+        "williarin/cook": "^1.3"
+    },
+    "require-dev": {
+        "roave/security-advisories": "dev-latest",
+        "phpunit/phpunit": "^12.0",
+        "phpstan/phpstan": "2.1.x-dev",
+        "friendsofphp/php-cs-fixer": "dev-master",
+        "symfony/test-pack": "^1.0",
+        "mikey179/vfsstream": "^1.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Stochastix\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Stochastix\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "stan": "vendor/bin/phpstan analyse src -c phpstan.neon --memory-limit=2G",
+        "cs-check": "vendor/bin/php-cs-fixer fix --diff --dry-run",
+        "cs-fix": "vendor/bin/php-cs-fixer fix",
+        "test": "vendor/bin/phpunit",
+        "quality": [
+            "@cs-check",
+            "@stan",
+            "@test"
+        ]
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "allow-plugins": {
+            "williarin/cook": false
+        }
+    }
+}

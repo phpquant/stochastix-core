@@ -1,0 +1,18 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: false
+
+    Stochastix\:
+        resource: '../src/*'
+        exclude:
+            - '../src/Common'
+            - '../src/DependencyInjection'
+            - '../src/Indicator'
+            - '../src/Order'
+            - '../src/**/Dto'
+            - '../src/**/Enum'
+            - '../src/**/Exception'
+            - '../src/**/Event'
+            - '../src/**/Model'

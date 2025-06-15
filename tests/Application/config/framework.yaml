@@ -1,0 +1,7 @@
+framework:
+    test: true
+    secret: 'S3CRET'
+    messenger:
+        buses:
+            messenger.bus.default:
+                middleware: ~

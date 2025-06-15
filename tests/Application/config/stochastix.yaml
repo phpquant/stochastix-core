@@ -1,0 +1,13 @@
+stochastix:
+    defaults:
+        bc_scale: 8
+        initial_capital: 10000.0
+        stake_currency: 'USDT'
+        timeframe: '1d'
+        symbols: ['BTC/USDT']
+        commission:
+            type: 'percentage'
+            rate: 0.001
+        data_source:
+            # This default is what our test will verify against.
+            exchange_id: 'binance'
