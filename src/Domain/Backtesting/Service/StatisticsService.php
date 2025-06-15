@@ -64,8 +64,8 @@ final readonly class StatisticsService implements StatisticsServiceInterface
 
         return [
             'pairStats' => empty($closedTrades) ? [] : array_values($this->calculateGroupedStats($closedTrades, 'symbol')),
-            'enterTagStats' => empty($closedTrades) ? [] : array_values($this->calculateGroupedStats($closedTrades, 'enter_tags')),
-            'exitTagStats' => empty($closedTrades) ? [] : array_values($this->calculateGroupedStats($closedTrades, 'exit_tags')),
+            'enterTagStats' => empty($closedTrades) ? [] : array_values($this->calculateGroupedStats($closedTrades, 'enterTags')),
+            'exitTagStats' => empty($closedTrades) ? [] : array_values($this->calculateGroupedStats($closedTrades, 'exitTags')),
             'summaryMetrics' => $summary,
         ];
     }

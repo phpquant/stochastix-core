@@ -713,16 +713,16 @@
         },
         {
             "name": "doctrine/doctrine-bundle",
-            "version": "2.14.0",
+            "version": "2.14.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/doctrine/DoctrineBundle.git",
-                "reference": "ca6a7350b421baf7fbdefbf9f4993292ed18effb"
+                "reference": "0a118222ab21ba05bd9f17fbaa6a3800865274f4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/doctrine/DoctrineBundle/zipball/ca6a7350b421baf7fbdefbf9f4993292ed18effb",
-                "reference": "ca6a7350b421baf7fbdefbf9f4993292ed18effb",
+                "url": "https://api.github.com/repos/doctrine/DoctrineBundle/zipball/0a118222ab21ba05bd9f17fbaa6a3800865274f4",
+                "reference": "0a118222ab21ba05bd9f17fbaa6a3800865274f4",
                 "shasum": ""
             },
             "require": {
@@ -749,9 +749,9 @@
             "require-dev": {
                 "doctrine/annotations": "^1 || ^2",
                 "doctrine/cache": "^1.11 || ^2.0",
-                "doctrine/coding-standard": "^12",
+                "doctrine/coding-standard": "^13",
                 "doctrine/deprecations": "^1.0",
-                "doctrine/orm": "^2.17 || ^3.0",
+                "doctrine/orm": "^2.17 || ^3.1",
                 "friendsofphp/proxy-manager-lts": "^1.0",
                 "phpstan/phpstan": "2.1.1",
                 "phpstan/phpstan-phpunit": "2.0.3",
@@ -815,7 +815,7 @@
             ],
             "support": {
                 "issues": "https://github.com/doctrine/DoctrineBundle/issues",
-                "source": "https://github.com/doctrine/DoctrineBundle/tree/2.14.0"
+                "source": "https://github.com/doctrine/DoctrineBundle/tree/2.14.1"
             },
             "funding": [
                 {
@@ -831,7 +831,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2025-03-22T17:28:21+00:00"
+            "time": "2025-06-09T20:22:28+00:00"
         },
         {
             "name": "doctrine/doctrine-migrations-bundle",
@@ -7616,12 +7616,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/PHP-CS-Fixer/PHP-CS-Fixer.git",
-                "reference": "e7288c7f6917615d353f98bd1606016ac4f35963"
+                "reference": "7f626a2ee2c0d39fec6e5a3204851d458ddf28bd"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/PHP-CS-Fixer/PHP-CS-Fixer/zipball/e7288c7f6917615d353f98bd1606016ac4f35963",
-                "reference": "e7288c7f6917615d353f98bd1606016ac4f35963",
+                "url": "https://api.github.com/repos/PHP-CS-Fixer/PHP-CS-Fixer/zipball/7f626a2ee2c0d39fec6e5a3204851d458ddf28bd",
+                "reference": "7f626a2ee2c0d39fec6e5a3204851d458ddf28bd",
                 "shasum": ""
             },
             "require": {
@@ -7714,7 +7714,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2025-06-14T11:04:35+00:00"
+            "time": "2025-06-15T08:51:23+00:00"
         },
         {
             "name": "masterminds/html5",

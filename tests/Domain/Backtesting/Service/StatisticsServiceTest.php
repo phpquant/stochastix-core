@@ -46,19 +46,19 @@ class StatisticsServiceTest extends TestCase
                 'symbol' => 'BTC/USDT', 'pnl' => '100',
                 'entryTime' => '2024-01-01 10:00:00', 'exitTime' => '2024-01-01 11:00:00',
                 'quantity' => '1', 'entryPrice' => '1000',
-                'enter_tags' => ['ema_cross'], 'exit_tags' => ['exit_signal'],
+                'enterTags' => ['ema_cross'], 'exitTags' => ['exit_signal'],
             ],
             [
                 'symbol' => 'BTC/USDT', 'pnl' => '-50',
                 'entryTime' => '2024-01-02 10:00:00', 'exitTime' => '2024-01-02 10:30:00',
                 'quantity' => '1', 'entryPrice' => '1100',
-                'enter_tags' => ['ema_cross', 'rsi_confirm'], 'exit_tags' => ['stop_loss'],
+                'enterTags' => ['ema_cross', 'rsi_confirm'], 'exitTags' => ['stop_loss'],
             ],
             [
                 'symbol' => 'BTC/USDT', 'pnl' => '200',
                 'entryTime' => '2024-01-03 10:00:00', 'exitTime' => '2024-01-03 12:00:00',
                 'quantity' => '1', 'entryPrice' => '1050',
-                'enter_tags' => ['rsi_confirm'], 'exit_tags' => ['take_profit'],
+                'enterTags' => ['rsi_confirm'], 'exitTags' => ['take_profit'],
             ],
         ];
 
