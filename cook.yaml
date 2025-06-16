@@ -1,17 +1,22 @@
 files:
-    Makefile: recipe/Makefile
+  Makefile:
+    if_exists: ignore
+    source: recipe/Makefile
 
-    .env:
-        content: |-
-            DATABASE_URL="sqlite:///%kernel.project_dir%/data/queue_%kernel.environment%.db"
+  .env:
+    type: env
+    if_exists: comment
+    content: |-
+      DATABASE_URL="sqlite:///%kernel.project_dir%/data/queue_%kernel.environment%.db"
 
 directories:
-    '%ROOT_DIR%/data/': recipe/data/
-    '%CONFIG_DIR%/': recipe/config/
+  '%ROOT_DIR%/data/': recipe/data/
+  '%CONFIG_DIR%/': recipe/config/
+  '%SRC_DIR%/': recipe/src/
 
 post_install_output: |
-    <bg=blue;fg=white>              </>
-    <bg=blue;fg=white> What's next? </>
-    <bg=blue;fg=white>              </>
+  <bg=blue;fg=white>              </>
+  <bg=blue;fg=white> What's next? </>
+  <bg=blue;fg=white>              </>
 
-      * <fg=blue>Read</> the full documentation at <comment>https://phpquant.github.io/stochastix-docs</>
+    * <fg=blue>Read</> the full documentation at <comment>https://phpquant.github.io/stochastix-docs</>
