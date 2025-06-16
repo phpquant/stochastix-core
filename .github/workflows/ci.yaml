@@ -5,8 +5,10 @@ on:
     branches: [ master ]
     tags:
       - 'v*.*.*'
+
   pull_request:
     branches: [ master ]
+
   workflow_dispatch:
 
 jobs:
@@ -42,3 +44,61 @@ jobs:
 
       - name: Run PHPUnit tests
         run: composer test
+
+  test_installation:
+    name: Test Project Installation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: bcmath, ds, gmp, trader, pdo_sqlite, zip, curl, libxml, dom
+          tools: composer:v2, symfony
+
+      - name: Create new Symfony project
+        run: symfony new test-project --dir=test-project --no-git
+
+      - name: Configure and install Stochastix bundle
+        working-directory: ./test-project
+        run: |
+          composer config --no-plugins allow-plugins.williarin/cook true
+          composer config repositories.stochastix-core '{"type": "path", "url": "..", "options": {"symlink": false}}'
+          composer require stochastix/core:"*@dev"
+
+      - name: Verify recipe installation
+        working-directory: ./test-project
+        run: |
+          echo "--- Verifying config/packages/stochastix.yaml ---"
+          test -f config/packages/stochastix.yaml || (echo "File not found!" && exit 1)
+          echo "Found."
+
+          echo "--- Verifying config/routes/stochastix.yaml ---"
+          test -f config/routes/stochastix.yaml || (echo "File not found!" && exit 1)
+          echo "Found."
+
+          echo "--- Verifying data/.gitkeep ---"
+          test -f data/.gitkeep || (echo "File not found!" && exit 1)
+          echo "Found."
+
+          echo "--- Verifying Makefile ---"
+          test -f Makefile || (echo "File not found!" && exit 1)
+          echo "Found."
+
+          echo "--- Verifying src/Strategy/SampleStrategy.php ---"
+          test -f src/Strategy/SampleStrategy.php || (echo "File not found!" && exit 1)
+          echo "Found."
+
+          echo "--- Verifying .env for DATABASE_URL ---"
+          grep -q 'DATABASE_URL="sqlite:///%kernel.project_dir%/data/queue_%kernel.environment%.db"' .env || (echo "DATABASE_URL not found or incorrect!" && exit 1)
+          echo "Found."
+
+      - name: Setup Database
+        working-directory: ./test-project
+        run: |
+          php bin/console doctrine:database:create
+          php bin/console doctrine:schema:create
