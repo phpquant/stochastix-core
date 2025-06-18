@@ -4,8 +4,10 @@ namespace Stochastix\Domain\Backtesting\Service;
 
 use Ds\Map;
 use Ds\Vector;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 use Stochastix\Domain\Backtesting\Dto\BacktestConfiguration;
+use Stochastix\Domain\Backtesting\Event\BacktestPhaseEvent;
 use Stochastix\Domain\Backtesting\Model\BacktestCursor;
 use Stochastix\Domain\Common\Enum\DirectionEnum;
 use Stochastix\Domain\Common\Enum\OhlcvEnum;
@@ -33,14 +35,16 @@ final readonly class Backtester
         private StatisticsServiceInterface $statisticsService,
         private SeriesMetricServiceInterface $seriesMetricService,
         private MultiTimeframeDataServiceInterface $multiTimeframeDataService,
+        private EventDispatcherInterface $eventDispatcher,
         private LoggerInterface $logger,
         #[Autowire('%kernel.project_dir%/data/market')]
         private string $baseDataPath,
     ) {
     }
 
-    public function run(BacktestConfiguration $config, ?callable $progressCallback = null): array
+    public function run(BacktestConfiguration $config, string $runId, ?callable $progressCallback = null): array
     {
+        $this->eventDispatcher->dispatch(new BacktestPhaseEvent($runId, 'initialization', 'start'));
         $this->logger->info('Starting backtest run for strategy: {strategy}', ['strategy' => $config->strategyAlias]);
 
         $portfolioManager = new PortfolioManager($this->logger);
@@ -87,7 +91,9 @@ final readonly class Backtester
         $indicatorDataForSave = [];
         $allTimestamps = [];
         $lastBars = null;
+        $this->eventDispatcher->dispatch(new BacktestPhaseEvent($runId, 'initialization', 'stop'));
 
+        $this->eventDispatcher->dispatch(new BacktestPhaseEvent($runId, 'loop', 'start'));
         foreach ($config->symbols as $symbol) {
             $this->logger->info('--- Starting backtest for Symbol: {symbol} ---', ['symbol' => $symbol]);
             $strategy = $this->strategyRegistry->getStrategy($config->strategyAlias);
@@ -203,7 +209,9 @@ final readonly class Backtester
 
             $this->logger->info('--- Finished backtest for Symbol: {symbol} ---', ['symbol' => $symbol]);
         }
+        $this->eventDispatcher->dispatch(new BacktestPhaseEvent($runId, 'loop', 'stop'));
 
+        $this->eventDispatcher->dispatch(new BacktestPhaseEvent($runId, 'statistics', 'start'));
         $this->logger->info('All symbols processed.');
 
         // 1. Sum P&L from all closed trades
@@ -271,6 +279,7 @@ final readonly class Backtester
         $results['timeSeriesMetrics'] = $this->seriesMetricService->calculate($results);
         $this->logger->info('Time-series metrics calculated.');
         unset($results['marketData']);
+        $this->eventDispatcher->dispatch(new BacktestPhaseEvent($runId, 'statistics', 'stop'));
 
         return $results;
     }

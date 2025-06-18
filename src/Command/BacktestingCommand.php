@@ -2,7 +2,9 @@
 
 namespace Stochastix\Command;
 
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Stochastix\Domain\Backtesting\Dto\BacktestConfiguration;
+use Stochastix\Domain\Backtesting\Event\BacktestPhaseEvent;
 use Stochastix\Domain\Backtesting\Repository\BacktestResultRepositoryInterface;
 use Stochastix\Domain\Backtesting\Service\Backtester;
 use Stochastix\Domain\Backtesting\Service\BacktestResultSaver;
@@ -16,7 +18,6 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Stopwatch\Stopwatch;
-use Symfony\Component\Stopwatch\StopwatchEvent;
 
 #[AsCommand(
     name: 'stochastix:backtesting',
@@ -34,7 +35,8 @@ class BacktestingCommand extends Command
         private readonly Backtester $backtester,
         private readonly ConfigurationResolver $configResolver,
         private readonly BacktestResultRepositoryInterface $resultRepository,
-        private readonly BacktestResultSaver $resultSaver
+        private readonly BacktestResultSaver $resultSaver,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
         parent::__construct();
     }
@@ -61,21 +63,38 @@ class BacktestingCommand extends Command
         $strategyAlias = $input->getArgument('strategy-alias');
 
         $stopwatch = new Stopwatch(true);
-        $stopwatch->start('backtest_execute');
+        $runId = null;
 
-        $io->title(sprintf('🚀 Stochastix Backtester Initializing: %s 🚀', $strategyAlias));
+        $listener = function (BacktestPhaseEvent $event) use ($stopwatch, &$runId) {
+            if ($event->runId !== $runId) {
+                return;
+            }
+
+            $phaseName = $event->phase;
+
+            if ($event->eventType === 'start' && !$stopwatch->isStarted($phaseName)) {
+                $stopwatch->start($phaseName);
+            } elseif ($event->eventType === 'stop' && $stopwatch->isStarted($phaseName)) {
+                $stopwatch->stop($phaseName);
+            }
+        };
+
+        $this->eventDispatcher->addListener(BacktestPhaseEvent::class, $listener);
 
         try {
+            $io->title(sprintf('🚀 Stochastix Backtester Initializing: %s 🚀', $strategyAlias));
+
+            $stopwatch->start('configuration');
             $io->text('Resolving configuration...');
             $config = $this->configResolver->resolve($input);
             $io->text('Configuration resolved.');
             $io->newLine();
+            $stopwatch->stop('configuration');
 
             if ($savePath = $input->getOption('save-config')) {
                 $this->saveConfigToJson($config, $savePath);
                 $io->success("Configuration saved to {$savePath}. Exiting as requested.");
-                $event = $stopwatch->stop('backtest_execute');
-                $this->displayExecutionTime($io, $event);
+                $this->displayExecutionTime($io, $stopwatch);
 
                 return Command::SUCCESS;
             }
@@ -104,11 +123,14 @@ class BacktestingCommand extends Command
             $io->definitionList(...$definitions);
 
             $io->section('Starting Backtest Run...');
-            $results = $this->backtester->run($config);
             $runId = $this->resultRepository->generateRunId($config->strategyAlias);
             $io->note("Generated Run ID: {$runId}");
 
+            $results = $this->backtester->run($config, $runId);
+
+            $stopwatch->start('saving');
             $this->resultSaver->save($runId, $results);
+            $stopwatch->stop('saving');
 
             $io->section('Backtest Performance Summary');
             $this->displaySummaryStats($io, $results);
@@ -116,15 +138,13 @@ class BacktestingCommand extends Command
             $this->displayOpenPositionsLog($io, $results['openPositions'] ?? []); // NEW
 
             $io->newLine();
-            $event = $stopwatch->stop('backtest_execute');
-            $this->displayExecutionTime($io, $event);
+            $this->displayExecutionTime($io, $stopwatch);
             $io->newLine();
             $io->success(sprintf('Backtest for "%s" finished successfully.', $strategyAlias));
 
             return Command::SUCCESS;
         } catch (\Exception $e) {
-            $event = $stopwatch->stop('backtest_execute');
-            $this->displayExecutionTime($io, $event, true);
+            $this->displayExecutionTime($io, $stopwatch, true);
 
             $io->error([
                 '💥 An error occurred:',
@@ -137,17 +157,47 @@ class BacktestingCommand extends Command
             }
 
             return Command::FAILURE;
+        } finally {
+            $this->eventDispatcher->removeListener(BacktestPhaseEvent::class, $listener);
         }
     }
 
-    private function displayExecutionTime(SymfonyStyle $io, StopwatchEvent $event, bool $errorOccurred = false): void
+    private function displayExecutionTime(SymfonyStyle $io, Stopwatch $stopwatch, bool $errorOccurred = false): void
     {
+        $rows = [];
+        $totalDuration = 0;
+        $peakMemory = 0;
+
+        $phases = ['configuration', 'initialization', 'loop', 'statistics', 'saving'];
+
+        foreach ($phases as $phase) {
+            if ($stopwatch->isStarted($phase)) {
+                $stopwatch->stop($phase);
+            }
+
+            try {
+                $event = $stopwatch->getEvent($phase);
+                $duration = $event->getDuration();
+                $memory = $event->getMemory();
+                $totalDuration += $duration;
+                $peakMemory = max($peakMemory, $memory);
+
+                $rows[] = [ucfirst($phase), sprintf('%.2f ms', $duration), sprintf('%.2f MB', $memory / (1024 ** 2))];
+            } catch (\LogicException) {
+                // Event was not started/stopped, so we can't display it
+                continue;
+            }
+        }
+
+        $io->section('Execution Profile');
+        $io->table(['Phase', 'Duration', 'Memory'], $rows);
+
         $messagePrefix = $errorOccurred ? '📊 Backtest ran for' : '📊 Backtest finished in';
         $io->writeln(sprintf(
-            '%s: <info>%.2f ms</info> / Memory usage: <info>%.2f MB</info>',
+            '%s: <info>%.2f ms</info> / Peak Memory usage: <info>%.2f MB</info>',
             $messagePrefix,
-            $event->getDuration(),
-            $event->getMemory() / (1024 ** 2)
+            $totalDuration,
+            $peakMemory / (1024 ** 2)
         ));
     }
 

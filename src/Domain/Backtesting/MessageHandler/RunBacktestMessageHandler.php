@@ -50,7 +50,7 @@ final readonly class RunBacktestMessageHandler
                 }
             };
 
-            $results = $this->backtester->run($message->configuration, $progressCallback);
+            $results = $this->backtester->run($message->configuration, $runId, $progressCallback);
 
             $this->resultSaver->save($runId, $results);
 
