@@ -4,8 +4,7 @@ namespace Stochastix\Domain\Data\Service;
 
 use Psr\Log\LoggerInterface;
 use Stochastix\Domain\Data\Exception\DownloaderException;
-use Stochastix\Domain\Data\Exception\ExchangeException;
-use Stochastix\Domain\Data\Exception\StorageException;
+use Stochastix\Domain\Data\Exception\EmptyHistoryException;
 use Stochastix\Domain\Data\Service\Exchange\ExchangeAdapterInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -20,112 +19,183 @@ readonly class OhlcvDownloader
     ) {
     }
 
-    /**
-     * Downloads OHLCV data, streams it to a temporary file,
-     * and then merges it with any existing data.
-     *
-     * @return string the final path to the data file
-     *
-     * @throws DownloaderException
-     */
     public function download(
         string $exchangeId,
         string $symbol,
         string $timeframe,
         \DateTimeImmutable $startTime,
         \DateTimeImmutable $endTime,
+        bool $forceOverwrite = false,
         ?string $jobId = null,
     ): string {
         $finalPath = $this->generateFilePath($exchangeId, $symbol, $timeframe);
-        $tempPath = $this->binaryStorage->getTempFilePath($finalPath);
-        $mergedPath = $this->binaryStorage->getMergedTempFilePath($finalPath);
-
-        $this->logger->info(
-            'Starting download: {exchange}/{symbol} [{timeframe}] from {start} to {end}',
-            [
-                'exchange' => $exchangeId,
-                'symbol' => $symbol,
-                'timeframe' => $timeframe,
-                'start' => $startTime->format('Y-m-d H:i:s'),
-                'end' => $endTime->format('Y-m-d H:i:s'),
-                'final_path' => $finalPath,
-            ]
-        );
-
-        // Ensure temp files are cleaned up if they exist from previous failed runs.
-        $this->cleanupFile($tempPath, 'previous .tmp file');
-        $this->cleanupFile($mergedPath, 'previous .merged.tmp file');
 
         try {
-            // 1. Download data to the .tmp file
-            $this->downloadToTemp($exchangeId, $symbol, $timeframe, $startTime, $endTime, $tempPath, $jobId);
+            $rangesToDownload = $this->calculateMissingRanges($finalPath, $startTime, $endTime, $timeframe, $forceOverwrite);
 
-            // Check if any data was actually downloaded before merging/renaming
-            if (!file_exists($tempPath) || filesize($tempPath) <= 64) {
-                $this->logger->warning('No new data downloaded to {temp}. Ensuring final file exists.', ['temp' => $tempPath]);
-                // If original doesn't exist, create an empty one.
-                if (!file_exists($finalPath)) {
-                    $this->binaryStorage->createFile($finalPath, $symbol, $timeframe);
+            if (empty($rangesToDownload)) {
+                $this->logger->info('Local data is already complete for the requested range. No download needed.', ['path' => $finalPath]);
+
+                return $finalPath;
+            }
+
+            $this->logger->info('Found {count} missing data range(s) to download.', ['count' => count($rangesToDownload)]);
+
+            $downloadedTempFiles = [];
+
+            foreach ($rangesToDownload as $i => $range) {
+                [$chunkStartTime, $chunkEndTime] = $range;
+
+                $tempPath = $this->binaryStorage->getTempFilePath($finalPath) . ".chunk.{$i}";
+                $this->cleanupFile($tempPath);
+
+                try {
+                    $this->logger->info('Downloading chunk #{num}: {start} to {end}', ['num' => $i + 1, 'start' => $chunkStartTime->format('Y-m-d H:i:s'), 'end' => $chunkEndTime->format('Y-m-d H:i:s')]);
+                    $this->downloadToTemp($exchangeId, $symbol, $timeframe, $chunkStartTime, $chunkEndTime, $tempPath, $jobId);
+                } catch (EmptyHistoryException $e) {
+                    $this->logger->warning('Initial date {start_date} is too early. Attempting to find the earliest available data from the exchange.', ['start_date' => $chunkStartTime->format('Y-m-d H:i:s')]);
+                    $firstAvailableDate = $this->exchangeAdapter->fetchFirstAvailableTimestamp($exchangeId, $symbol, $timeframe);
+
+                    if ($firstAvailableDate !== null && $firstAvailableDate <= $chunkEndTime) {
+                        $this->logger->info('Found earliest data at {real_start}. Resuming download for the adjusted range.', ['real_start' => $firstAvailableDate->format('Y-m-d H:i:s')]);
+                        $this->downloadToTemp($exchangeId, $symbol, $timeframe, $firstAvailableDate, $chunkEndTime, $tempPath, $jobId);
+                    } else {
+                        $this->logger->warning('Could not determine a valid start date or the earliest data is outside the requested range for {symbol}. Skipping this chunk.', ['symbol' => $symbol]);
+                    }
                 }
-                $this->cleanupFile($tempPath); // Clean up empty/failed temp.
 
-                return $finalPath; // Return path to original or new empty file.
+                if (file_exists($tempPath) && filesize($tempPath) > 64) {
+                    $downloadedTempFiles[] = $tempPath;
+                }
             }
 
-            // 2. Check if original file exists and needs merging.
-            $originalExists = file_exists($finalPath) && filesize($finalPath) > 64;
-
-            if (!$originalExists) {
-                // No original file, just rename .tmp to .stchx
-                $this->logger->info('No existing data found. Renaming {temp} to {final}.', [
-                    'temp' => $tempPath,
-                    'final' => $finalPath,
-                ]);
-                $this->binaryStorage->atomicRename($tempPath, $finalPath);
-            } else {
-                // Original exists, perform the K-way merge
-                $this->logger->info('Existing data found. Merging {final} and {temp} into {merged}.', [
-                    'final' => $finalPath,
-                    'temp' => $tempPath,
-                    'merged' => $mergedPath,
-                ]);
-                $this->binaryStorage->mergeAndWrite($finalPath, $tempPath, $mergedPath);
-
-                $this->logger->info('Merge complete. Renaming {merged} to {final}.', [
-                    'merged' => $mergedPath,
-                    'final' => $finalPath,
-                ]);
-                $this->binaryStorage->atomicRename($mergedPath, $finalPath);
+            if (empty($downloadedTempFiles) && !file_exists($finalPath)) {
+                $this->binaryStorage->createFile($finalPath, $symbol, $timeframe);
+            } elseif (!empty($downloadedTempFiles)) {
+                $this->mergeFiles(file_exists($finalPath) ? $finalPath : null, $downloadedTempFiles, $finalPath);
             }
-
-            $this->logger->info('Download and integration successful: {file}', ['file' => $finalPath]);
-
-            // 3. Clean up on success
-            $this->cleanupFile($tempPath, '.tmp file after success');
-            $this->cleanupFile($mergedPath, '.merged.tmp file after success');
 
             return $finalPath;
         } catch (\Throwable $e) {
             $this->logger->error(
-                'Download failed: {message}. Temp files may remain for inspection: {temp}, {merged}',
-                [
-                    'message' => $e->getMessage(),
-                    'temp' => $tempPath,
-                    'merged' => $mergedPath,
-                    'exception' => $e,
-                ]
+                'Download failed: {message}.',
+                ['message' => $e->getMessage(), 'exception' => $e]
             );
-
-            // Re-throw as a DownloaderException
             throw new DownloaderException("Download failed for {$exchangeId}/{$symbol}: {$e->getMessage()}", $e->getCode(), $e);
         }
     }
 
     /**
-     * Handles the actual fetching and writing to the temporary file.
-     *
-     * @throws DownloaderException|StorageException|ExchangeException
+     * @return array<int, array{\DateTimeImmutable, \DateTimeImmutable}>
      */
+    private function calculateMissingRanges(string $filePath, \DateTimeImmutable $requestStart, \DateTimeImmutable $requestEnd, string $timeframe, bool $forceOverwrite): array
+    {
+        $fileExists = file_exists($filePath) && filesize($filePath) > 64;
+
+        if ($forceOverwrite || !$fileExists) {
+            return [[$requestStart, $requestEnd]];
+        }
+
+        $header = $this->binaryStorage->readHeader($filePath);
+
+        if ($header['numRecords'] < 1) {
+            return [[$requestStart, $requestEnd]];
+        }
+
+        $firstRecord = $this->binaryStorage->readRecordByIndex($filePath, 0);
+        $lastRecord = $this->binaryStorage->readRecordByIndex($filePath, $header['numRecords'] - 1);
+
+        $localStart = new \DateTimeImmutable()->setTimestamp($firstRecord['timestamp']);
+        $localEnd = new \DateTimeImmutable()->setTimestamp($lastRecord['timestamp']);
+
+        $rangesToDownload = [];
+
+        // 1. Calculate the "before" chunk, correctly clipped by the request's end date.
+        $beforeChunkStart = $requestStart;
+        $beforeChunkEnd = $localStart->modify('-1 second');
+        if ($beforeChunkStart < $beforeChunkEnd) {
+            $actualEnd = min($requestEnd, $beforeChunkEnd);
+            if ($beforeChunkStart <= $actualEnd) {
+                $rangesToDownload[] = [$beforeChunkStart, $actualEnd];
+            }
+        }
+
+        // 2. Calculate internal gaps, correctly clipped by the request's date range.
+        $internalGaps = $this->findGapsInFile($filePath, $timeframe);
+        foreach ($internalGaps as $gap) {
+            $downloadStart = max($requestStart, $gap[0]);
+            $downloadEnd = min($requestEnd, $gap[1]);
+            if ($downloadStart <= $downloadEnd) {
+                $rangesToDownload[] = [$downloadStart, $downloadEnd];
+            }
+        }
+
+        // 3. Calculate the "after" chunk, correctly clipped by the request's start date.
+        $afterChunkStart = $localEnd->modify('+1 second');
+        $afterChunkEnd = $requestEnd;
+        if ($afterChunkStart < $afterChunkEnd) {
+            $actualStart = max($requestStart, $afterChunkStart);
+            if ($actualStart <= $afterChunkEnd) {
+                $rangesToDownload[] = [$actualStart, $afterChunkEnd];
+            }
+        }
+
+        return $this->sortAndMergeRanges($rangesToDownload);
+    }
+
+    private function findGapsInFile(string $filePath, string $timeframe): array
+    {
+        $expectedInterval = $this->timeframeToSeconds($timeframe);
+        if ($expectedInterval === null) {
+            return [];
+        }
+
+        $gaps = [];
+        $records = $this->binaryStorage->readRecordsSequentially($filePath);
+        $previousTimestamp = null;
+
+        foreach ($records as $record) {
+            $currentTimestamp = $record['timestamp'];
+            if ($previousTimestamp !== null) {
+                $diff = $currentTimestamp - $previousTimestamp;
+                if ($diff > $expectedInterval) {
+                    $gapStart = new \DateTimeImmutable()->setTimestamp($previousTimestamp + $expectedInterval);
+                    $gapEnd = new \DateTimeImmutable()->setTimestamp($currentTimestamp - 1);
+                    if ($gapStart <= $gapEnd) {
+                        $gaps[] = [$gapStart, $gapEnd];
+                    }
+                }
+            }
+            $previousTimestamp = $currentTimestamp;
+        }
+
+        return $gaps;
+    }
+
+    private function mergeFiles(?string $originalPath, array $tempFiles, string $finalPath): void
+    {
+        $currentFileToMerge = $originalPath;
+
+        foreach ($tempFiles as $i => $tempFile) {
+            $mergedPath = $this->binaryStorage->getMergedTempFilePath($finalPath) . ".{$i}";
+            if ($currentFileToMerge === null) {
+                $this->binaryStorage->atomicRename($tempFile, $mergedPath);
+            } else {
+                $this->binaryStorage->mergeAndWrite($currentFileToMerge, $tempFile, $mergedPath);
+            }
+
+            if ($currentFileToMerge !== null && $currentFileToMerge !== $finalPath) {
+                $this->cleanupFile($currentFileToMerge);
+            }
+            $this->cleanupFile($tempFile);
+            $currentFileToMerge = $mergedPath;
+        }
+
+        if ($currentFileToMerge !== null) {
+            $this->binaryStorage->atomicRename($currentFileToMerge, $finalPath);
+        }
+    }
+
     private function downloadToTemp(
         string $exchangeId,
         string $symbol,
@@ -139,60 +209,64 @@ readonly class OhlcvDownloader
             throw new DownloaderException("Exchange '{$exchangeId}' is not supported.");
         }
 
-        // Create the temp file with its header
         $this->binaryStorage->createFile($tempPath, $symbol, $timeframe);
-        $this->logger->debug('Initialized temp file: {file}', ['file' => $tempPath]);
-
-        // Get the generator from the exchange adapter
-        $recordsGenerator = $this->exchangeAdapter->fetchOhlcv(
-            $exchangeId,
-            $symbol,
-            $timeframe,
-            $startTime,
-            $endTime,
-            $jobId,
-        );
-        $this->logger->debug('Starting data fetch to temp file...');
-
-        // Stream records directly to the temp file
+        $recordsGenerator = $this->exchangeAdapter->fetchOhlcv($exchangeId, $symbol, $timeframe, $startTime, $endTime, $jobId);
         $recordCount = $this->binaryStorage->appendRecords($tempPath, $recordsGenerator);
-        $this->logger->info('Streamed {count} records to temp file.', ['count' => $recordCount]);
 
-        // Update the record count in the temp file's header
         if ($recordCount > 0) {
             $this->binaryStorage->updateRecordCount($tempPath, $recordCount);
-            $this->logger->debug('Updated temp header record count to {count}.', ['count' => $recordCount]);
-        } else {
-            $this->logger->warning('No records were downloaded for {symbol} in the specified range.', ['symbol' => $symbol]);
         }
     }
 
-    /**
-     * Generates the final path for the .stchx file.
-     */
     private function generateFilePath(string $exchangeId, string $symbol, string $timeframe): string
     {
         $sanitizedSymbol = str_replace('/', '_', $symbol);
 
-        return sprintf(
-            '%s/%s/%s/%s.stchx',
-            rtrim($this->baseDataPath, '/'),
-            strtolower($exchangeId),
-            strtoupper($sanitizedSymbol),
-            $timeframe,
-        );
+        return sprintf('%s/%s/%s/%s.stchx', rtrim($this->baseDataPath, '/'), strtolower($exchangeId), strtoupper($sanitizedSymbol), $timeframe);
     }
 
-    /**
-     * Safely deletes a file if it exists.
-     */
     private function cleanupFile(string $filePath, string $reason = ''): void
     {
-        if (file_exists($filePath)) {
-            $this->logger->debug('Cleaning up {reason}: {file}', ['reason' => $reason, 'file' => $filePath]);
-            if (!@unlink($filePath)) {
-                $this->logger->warning('Could not clean up temporary file: {file}', ['file' => $filePath]);
+        if (file_exists($filePath) && !@unlink($filePath)) {
+            $this->logger->warning('Could not clean up temporary file: {file}', ['file' => $filePath]);
+        }
+    }
+
+    private function timeframeToSeconds(string $timeframe): ?int
+    {
+        $unit = substr($timeframe, -1);
+        $value = (int) substr($timeframe, 0, -1);
+
+        if ($value <= 0) {
+            return null;
+        }
+
+        return match ($unit) {
+            'm' => $value * 60, 'h' => $value * 3600, 'd' => $value * 86400, 'w' => $value * 604800, default => null
+        };
+    }
+
+    private function sortAndMergeRanges(array $ranges): array
+    {
+        if (count($ranges) <= 1) {
+            return $ranges;
+        }
+
+        usort($ranges, static fn ($a, $b) => $a[0] <=> $b[0]);
+        $merged = [];
+        $currentRange = array_shift($ranges);
+
+        foreach ($ranges as $range) {
+            if ($range[0] <= $currentRange[1]->modify('+1 second')) {
+                $currentRange[1] = max($currentRange[1], $range[1]);
+            } else {
+                $merged[] = $currentRange;
+                $currentRange = $range;
             }
         }
+
+        $merged[] = $currentRange;
+
+        return $merged;
     }
 }

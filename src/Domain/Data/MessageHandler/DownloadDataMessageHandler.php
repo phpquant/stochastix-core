@@ -46,6 +46,7 @@ final readonly class DownloadDataMessageHandler
                 $dto->timeframe,
                 $startDate,
                 $endDate,
+                $dto->forceOverwrite,
                 $jobId
             );
 
