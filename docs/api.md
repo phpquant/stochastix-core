@@ -52,6 +52,27 @@ This document outlines the RESTful API endpoints provided by the `stochastix-cor
 ---
 ### Market Data
 
+* **`GET /api/data/exchanges`**
+    * **Description:** Retrieves a sorted list of all exchange IDs supported by the backend (via the CCXT library).
+    * **Requires:** None
+    * **Request Body:** None
+    * **Success Response:** `200 OK`
+    * **Example Success Response Body:**
+      ```json
+      [
+          "ace",
+          "alpaca",
+          "ascendex",
+          "bequant",
+          "bigone",
+          "binance",
+          "binancecoinm",
+          "binanceus",
+          "binanceusdm",
+          "bingx"
+      ]
+      ```
+
 * **`GET /api/data-availability`**
     * **Description:** Scans the server for available market data (`.stchx` files) and returns a manifest detailing available symbols, their timeframes, and the start/end dates for each dataset.
     * **Requires:** None

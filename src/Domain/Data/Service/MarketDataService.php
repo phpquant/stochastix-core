@@ -2,6 +2,7 @@
 
 namespace Stochastix\Domain\Data\Service;
 
+use ccxt\Exchange;
 use Psr\Cache\InvalidArgumentException;
 use Stochastix\Domain\Data\Exception\ExchangeException;
 use Stochastix\Domain\Data\Service\Exchange\ExchangeFactory;
@@ -53,5 +54,16 @@ final readonly class MarketDataService
                 throw new ExchangeException("Failed to fetch symbols for exchange '{$exchangeId}': " . $e->getMessage(), 0, $e);
             }
         });
+    }
+
+    /**
+     * @return string[]
+     */
+    public function getExchanges(): array
+    {
+        $exchanges = Exchange::$exchanges;
+        sort($exchanges);
+
+        return $exchanges;
     }
 }
