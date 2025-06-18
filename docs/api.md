@@ -135,6 +135,21 @@ This document outlines the RESTful API endpoints provided by the `stochastix-cor
         * `400 Bad Request`: Invalid input (e.g., validation errors in the request body, end date before start date).
         * `500 Internal Server Error`: If the download message could not be dispatched to the queue.
 
+* **`DELETE /api/data/download/{jobId}`**
+    * **Description:** Requests the cancellation of a running download job. The cancellation may take a few moments to take effect, as it is checked between data chunk fetches.
+    * **Requires:** None
+    * **URL Parameters:**
+        * `jobId` (string, required): The unique ID of the download job to cancel.
+    * **Request Body:** None
+    * **Success Response:** `202 Accepted`
+    * **Example Success Response Body:**
+        ```json
+        {
+          "status": "cancellation_requested",
+          "jobId": "download_666c1e5a7b8d9"
+        }
+        ```
+    * **Error Responses:** None.
 
 * **`GET /api/data/inspect/{exchangeId}/{symbol}/{timeframe}`**
     * **Description:** Inspects a specific market data file (`.stchx`). Returns the file's header metadata, a sample of the first and last records, and a full data consistency validation report (checking for gaps, duplicates, and out-of-order records).

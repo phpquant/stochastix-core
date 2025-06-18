@@ -3,6 +3,7 @@
 namespace Stochastix\Domain\Data\Service;
 
 use Psr\Log\LoggerInterface;
+use Stochastix\Domain\Data\Exception\DownloadCancelledException;
 use Stochastix\Domain\Data\Exception\DownloaderException;
 use Stochastix\Domain\Data\Exception\EmptyHistoryException;
 use Stochastix\Domain\Data\Service\Exchange\ExchangeAdapterInterface;
@@ -76,6 +77,8 @@ readonly class OhlcvDownloader
             }
 
             return $finalPath;
+        } catch (DownloadCancelledException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             $this->logger->error(
                 'Download failed: {message}.',

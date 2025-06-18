@@ -3,18 +3,23 @@
 namespace Stochastix\Domain\Data\Service\Exchange;
 
 use ccxt\Exchange;
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 use Stochastix\Domain\Data\Event\DownloadProgressEvent;
+use Stochastix\Domain\Data\Exception\DownloadCancelledException;
 use Stochastix\Domain\Data\Exception\EmptyHistoryException;
 use Stochastix\Domain\Data\Exception\ExchangeException;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 readonly class CcxtAdapter implements ExchangeAdapterInterface
 {
     public function __construct(
         private EventDispatcherInterface $eventDispatcher,
         private LoggerInterface $logger,
-        private ExchangeFactory $exchangeFactory
+        private ExchangeFactory $exchangeFactory,
+        #[Autowire(service: 'stochastix.download.cancel.cache')]
+        private CacheItemPoolInterface $cache,
     ) {
     }
 
@@ -49,8 +54,17 @@ readonly class CcxtAdapter implements ExchangeAdapterInterface
         $durationMs = Exchange::parse_timeframe($timeframe) * 1000;
         $totalDuration = max(1, $endTimestamp - $since);
         $isFirstFetch = true;
+        $cancellationCacheKey = 'download.cancel.' . $jobId;
 
         while ($since <= $endTimestamp) {
+            if ($jobId) {
+                $cancellationItem = $this->cache->getItem($cancellationCacheKey);
+                if ($cancellationItem->isHit()) {
+                    $this->cache->deleteItem($cancellationCacheKey);
+                    throw new DownloadCancelledException("Download job {$jobId} was cancelled by user request.");
+                }
+            }
+
             try {
                 $ohlcvs = $exchange->fetch_ohlcv($symbol, $timeframe, $since, $limit);
             } catch (\Throwable $e) {
