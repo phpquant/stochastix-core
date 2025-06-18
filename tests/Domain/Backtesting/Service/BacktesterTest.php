@@ -5,6 +5,7 @@ namespace Stochastix\Tests\Domain\Backtesting\Service;
 use org\bovigo\vfs\vfsStream;
 use org\bovigo\vfs\vfsStreamDirectory;
 use PHPUnit\Framework\TestCase;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\NullLogger;
 use Stochastix\Domain\Backtesting\Dto\BacktestConfiguration;
 use Stochastix\Domain\Backtesting\Service\Backtester;
@@ -29,6 +30,7 @@ class BacktesterTest extends TestCase
     private StatisticsServiceInterface $statisticsServiceMock;
     private SeriesMetricServiceInterface $seriesMetricServiceMock;
     private MultiTimeframeDataServiceInterface $multiTimeframeDataServiceMock;
+    private EventDispatcherInterface $eventDispatcherMock;
     private vfsStreamDirectory $vfsRoot;
 
     protected function setUp(): void
@@ -40,6 +42,7 @@ class BacktesterTest extends TestCase
         $this->statisticsServiceMock = $this->createMock(StatisticsServiceInterface::class);
         $this->seriesMetricServiceMock = $this->createMock(SeriesMetricServiceInterface::class);
         $this->multiTimeframeDataServiceMock = $this->createMock(MultiTimeframeDataServiceInterface::class);
+        $this->eventDispatcherMock = $this->createMock(EventDispatcherInterface::class);
 
         $this->vfsRoot = vfsStream::setup('data');
 
@@ -49,6 +52,7 @@ class BacktesterTest extends TestCase
             $this->statisticsServiceMock,
             $this->seriesMetricServiceMock,
             $this->multiTimeframeDataServiceMock,
+            $this->eventDispatcherMock,
             new NullLogger(),
             $this->vfsRoot->url()
         );
@@ -100,7 +104,7 @@ class BacktesterTest extends TestCase
         $this->statisticsServiceMock->expects($this->once())->method('calculate')->willReturn(['summaryMetrics' => ['finalBalance' => '10000']]);
         $this->seriesMetricServiceMock->expects($this->once())->method('calculate')->willReturn(['equity' => ['value' => [10000, 10000]]]);
 
-        $results = $this->backtester->run($config);
+        $results = $this->backtester->run($config, 'test_run');
 
         $this->assertIsArray($results);
         $this->assertArrayHasKey('status', $results);
@@ -152,7 +156,7 @@ class BacktesterTest extends TestCase
             $this->assertEquals($callCount, $processed);
         };
 
-        $this->backtester->run($config, $progressCallback);
+        $this->backtester->run($config, 'test_run', $progressCallback);
 
         $this->assertEquals(5, $callCount);
     }
@@ -201,7 +205,7 @@ class BacktesterTest extends TestCase
         $this->statisticsServiceMock->method('calculate')->willReturn([]);
         $this->seriesMetricServiceMock->method('calculate')->willReturn([]);
 
-        $results = $this->backtester->run($config);
+        $results = $this->backtester->run($config, 'test_run');
 
         // Unrealized PNL = (Entry Price - Current Price) * Quantity = (3100 - 2900) * 0.5 = 100
         $expectedUnrealizedPnl = '100';
