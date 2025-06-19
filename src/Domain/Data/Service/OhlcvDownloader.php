@@ -237,7 +237,13 @@ readonly class OhlcvDownloader
     {
         $sanitizedSymbol = str_replace('/', '_', $symbol);
 
-        return sprintf('%s/%s/%s/%s.stchx', rtrim($this->baseDataPath, '/'), strtolower($exchangeId), strtoupper($sanitizedSymbol), $timeframe);
+        return sprintf(
+            '%s/%s/%s/%s.stchx',
+            rtrim($this->baseDataPath, '/'),
+            strtolower($exchangeId),
+            strtoupper($sanitizedSymbol),
+            $timeframe,
+        );
     }
 
     private function cleanupFile(string $filePath, string $reason = ''): void
