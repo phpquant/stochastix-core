@@ -30,62 +30,73 @@ readonly class OhlcvDownloader
         ?string $jobId = null,
     ): string {
         $finalPath = $this->generateFilePath($exchangeId, $symbol, $timeframe);
+        $attemptedTempFiles = [];
+        $exception = null;
 
         try {
             $rangesToDownload = $this->calculateMissingRanges($finalPath, $startTime, $endTime, $timeframe, $forceOverwrite);
 
             if (empty($rangesToDownload)) {
                 $this->logger->info('Local data is already complete for the requested range. No download needed.', ['path' => $finalPath]);
-
                 return $finalPath;
             }
 
             $this->logger->info('Found {count} missing data range(s) to download.', ['count' => count($rangesToDownload)]);
 
-            $downloadedTempFiles = [];
-
             foreach ($rangesToDownload as $i => $range) {
-                [$chunkStartTime, $chunkEndTime] = $range;
-
+                $chunkStartTime = $range[0];
+                $chunkEndTime = $range[1];
                 $tempPath = $this->binaryStorage->getTempFilePath($finalPath) . ".chunk.{$i}";
+                $attemptedTempFiles[] = $tempPath; // Track that we are going to attempt to create this file.
                 $this->cleanupFile($tempPath);
 
                 try {
                     $this->logger->info('Downloading chunk #{num}: {start} to {end}', ['num' => $i + 1, 'start' => $chunkStartTime->format('Y-m-d H:i:s'), 'end' => $chunkEndTime->format('Y-m-d H:i:s')]);
                     $this->downloadToTemp($exchangeId, $symbol, $timeframe, $chunkStartTime, $chunkEndTime, $tempPath, $jobId);
+
                 } catch (EmptyHistoryException $e) {
                     $this->logger->warning('Initial date {start_date} is too early. Attempting to find the earliest available data from the exchange.', ['start_date' => $chunkStartTime->format('Y-m-d H:i:s')]);
                     $firstAvailableDate = $this->exchangeAdapter->fetchFirstAvailableTimestamp($exchangeId, $symbol, $timeframe);
 
                     if ($firstAvailableDate !== null && $firstAvailableDate <= $chunkEndTime) {
                         $this->logger->info('Found earliest data at {real_start}. Resuming download for the adjusted range.', ['real_start' => $firstAvailableDate->format('Y-m-d H:i:s')]);
+                        // Retry the download with the adjusted start date
                         $this->downloadToTemp($exchangeId, $symbol, $timeframe, $firstAvailableDate, $chunkEndTime, $tempPath, $jobId);
                     } else {
                         $this->logger->warning('Could not determine a valid start date or the earliest data is outside the requested range for {symbol}. Skipping this chunk.', ['symbol' => $symbol]);
                     }
                 }
-
-                if (file_exists($tempPath) && filesize($tempPath) > 64) {
-                    $downloadedTempFiles[] = $tempPath;
+            }
+        } catch (\Throwable $e) {
+            $exception = $e; // Store exception to re-throw after finally block
+        } finally {
+            // Discover any valid temp files that were created, even if the process was interrupted.
+            $validTempFiles = [];
+            foreach ($attemptedTempFiles as $path) {
+                if (file_exists($path) && filesize($path) > 64) {
+                    $validTempFiles[] = $path;
                 }
             }
 
-            if (empty($downloadedTempFiles) && !file_exists($finalPath)) {
+            if (!empty($validTempFiles)) {
+                $this->logger->info('Merging {count} successfully downloaded chunk(s).', ['count' => count($validTempFiles)]);
+                $this->mergeFiles(file_exists($finalPath) ? $finalPath : null, $validTempFiles, $finalPath);
+            } elseif ($exception === null && !file_exists($finalPath)) {
+                // Only create an empty file if nothing was downloaded AND no error occurred.
                 $this->binaryStorage->createFile($finalPath, $symbol, $timeframe);
-            } elseif (!empty($downloadedTempFiles)) {
-                $this->mergeFiles(file_exists($finalPath) ? $finalPath : null, $downloadedTempFiles, $finalPath);
             }
 
-            return $finalPath;
-        } catch (DownloadCancelledException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            $this->logger->error(
-                'Download failed: {message}.',
-                ['message' => $e->getMessage(), 'exception' => $e]
-            );
-            throw new DownloaderException("Download failed for {$exchangeId}/{$symbol}: {$e->getMessage()}", $e->getCode(), $e);
+            // If an exception was caught, re-throw it now after cleanup/merging is done.
+            if ($exception instanceof DownloadCancelledException) {
+                $this->logger->info('Download was cancelled by user. Progress has been saved.');
+                throw $exception;
+            } elseif ($exception !== null) {
+                $this->logger->error('Download failed: {message}.', ['message' => $exception->getMessage(), 'exception' => $exception]);
+                throw new DownloaderException("Download failed for {$exchangeId}/{$symbol}: {$exception->getMessage()}", $exception->getCode(), $exception);
+            }
         }
+
+        return $finalPath;
     }
 
     /**
@@ -214,10 +225,11 @@ readonly class OhlcvDownloader
 
         $this->binaryStorage->createFile($tempPath, $symbol, $timeframe);
         $recordsGenerator = $this->exchangeAdapter->fetchOhlcv($exchangeId, $symbol, $timeframe, $startTime, $endTime, $jobId);
-        $recordCount = $this->binaryStorage->appendRecords($tempPath, $recordsGenerator);
+
+        $recordCount = $this->binaryStorage->streamAndCommitRecords($tempPath, $recordsGenerator);
 
         if ($recordCount > 0) {
-            $this->binaryStorage->updateRecordCount($tempPath, $recordCount);
+            $this->logger->info('Streamed and committed {count} records to temp file.', ['count' => $recordCount]);
         }
     }
 

@@ -562,4 +562,82 @@ final readonly class BinaryStorage implements BinaryStorageInterface
             throw new StorageException(sprintf('Directory "%s" was not created', $directory));
         }
     }
+
+    public function streamAndCommitRecords(string $filePath, iterable $records, int $commitInterval = 5000): int
+    {
+        $handle = @fopen($filePath, 'r+b');
+        if ($handle === false) {
+            throw new StorageException("Could not open file '{$filePath}' for streaming write.");
+        }
+
+        if (!flock($handle, LOCK_EX)) {
+            fclose($handle);
+            throw new StorageException("Could not acquire exclusive lock on '{$filePath}'.");
+        }
+
+        $writtenCount = 0;
+        try {
+            // Seek to the end of the file to start appending records.
+            fseek($handle, 0, SEEK_END);
+
+            foreach ($records as $record) {
+                $packedRecord = pack(
+                    self::RECORD_PACK_FORMAT,
+                    $record['timestamp'],
+                    $record['open'],
+                    $record['high'],
+                    $record['low'],
+                    $record['close'],
+                    $record['volume']
+                );
+
+                if (fwrite($handle, $packedRecord) !== self::RECORD_LENGTH_V1) {
+                    throw new StorageException("Failed to write complete record to '{$filePath}'.");
+                }
+                ++$writtenCount;
+
+                // Periodically update the record count in the header
+                if ($writtenCount > 0 && $writtenCount % $commitInterval === 0) {
+                    $this->updateHeaderCountInPlace($handle, $writtenCount);
+                }
+            }
+
+            // Final update for any remaining records
+            if ($writtenCount > 0) {
+                $this->updateHeaderCountInPlace($handle, $writtenCount);
+            }
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+
+        return $writtenCount;
+    }
+
+    /**
+     * Updates the record count in the header of an already open and locked file handle.
+     */
+    private function updateHeaderCountInPlace($fileHandle, int $recordCount): void
+    {
+        $currentPosition = ftell($fileHandle);
+        if ($currentPosition === false) {
+            throw new StorageException('Could not get current file position.');
+        }
+
+        if (fseek($fileHandle, 16) !== 0) { // Offset 16 is where numRecords starts
+            throw new StorageException('Could not seek to record count position.');
+        }
+
+        $packedCount = pack(self::UINT64_PACK_FORMAT, $recordCount);
+
+        if (fwrite($fileHandle, $packedCount) !== 8) { // 8 bytes for uint64_t
+            throw new StorageException('Failed to write record count.');
+        }
+
+        // Important: flush the write to disk immediately.
+        fflush($fileHandle);
+
+        // Return the file pointer to its original position to continue appending.
+        fseek($fileHandle, $currentPosition);
+    }
 }
