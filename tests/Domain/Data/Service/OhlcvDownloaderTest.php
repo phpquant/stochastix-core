@@ -39,6 +39,8 @@ class OhlcvDownloaderTest extends TestCase
     public function testDownloadForNewFile(): void
     {
         $finalPath = $this->vfsRoot->url() . '/market/binance/BTC_USDT/1h.stchx';
+        $tempChunkPath = $finalPath . '.tmp.chunk.0';
+        $mergedPath = $finalPath . '.merged.tmp.0';
 
         vfsStream::create(['market' => ['binance' => ['BTC_USDT' => []]]], $this->vfsRoot);
 
@@ -50,18 +52,15 @@ class OhlcvDownloaderTest extends TestCase
 
         $this->binaryStorageMock->expects($this->once())
             ->method('createFile')
-            ->willReturnCallback(fn (string $path) => file_put_contents($path, str_repeat('a', 128)));
+            ->willReturnCallback(fn(string $path) => file_put_contents($path, str_repeat('a', 128)));
 
-        $this->binaryStorageMock->method('appendRecords')->willReturn(1);
+        $this->binaryStorageMock->method('streamAndCommitRecords')->willReturn(1);
 
         $this->binaryStorageMock->expects($this->exactly(2))->method('atomicRename');
 
         $this->downloader->download(
-            'binance',
-            'BTC/USDT',
-            '1h',
-            new \DateTimeImmutable('2024-01-01'),
-            new \DateTimeImmutable('2024-01-02')
+            'binance', 'BTC/USDT', '1h',
+            new \DateTimeImmutable('2024-01-01'), new \DateTimeImmutable('2024-01-02')
         );
     }
 
@@ -78,18 +77,17 @@ class OhlcvDownloaderTest extends TestCase
         $this->binaryStorageMock->method('getTempFilePath')->willReturn($tempPath);
         $this->binaryStorageMock->method('getMergedTempFilePath')->willReturn($mergedPath);
         $this->binaryStorageMock->method('createFile')->willReturnCallback(fn (string $path) => file_put_contents($path, str_repeat('b', 128)));
-        $this->binaryStorageMock->method('appendRecords')->willReturn(1);
-        $this->binaryStorageMock->expects($this->once())->method('mergeAndWrite');
 
+        $this->binaryStorageMock->method('streamAndCommitRecords')->willReturn(1);
+
+        $this->binaryStorageMock->expects($this->once())->method('mergeAndWrite');
         $this->binaryStorageMock->expects($this->once())->method('atomicRename')
             ->with($this->stringEndsWith('.merged.tmp.0'), $finalPath);
 
+
         $this->downloader->download(
-            'binance',
-            'BTC/USDT',
-            '1h',
-            new \DateTimeImmutable('2024-01-01'),
-            new \DateTimeImmutable('2024-01-02'),
+            'binance', 'BTC/USDT', '1h',
+            new \DateTimeImmutable('2024-01-01'), new \DateTimeImmutable('2024-01-02'),
             true // Force overwrite
         );
     }
@@ -99,27 +97,23 @@ class OhlcvDownloaderTest extends TestCase
         $finalPath = $this->vfsRoot->url() . '/market/binance/BTC_USDT/1h.stchx';
         vfsStream::create(['market' => ['binance' => ['BTC_USDT' => ['1h.stchx' => str_repeat('a', 128)]]]], $this->vfsRoot);
 
-        // --- Mocks for Gap Detection ---
         $this->binaryStorageMock->method('readHeader')->willReturn(['numRecords' => 2]);
         $this->binaryStorageMock->method('readRecordByIndex')
             ->willReturnOnConsecutiveCalls(
-                ['timestamp' => strtotime('2024-01-01 10:00:00')], // Local start
-                ['timestamp' => strtotime('2024-01-01 12:00:00')]  // Local end (note the 1-hour gap)
+                ['timestamp' => strtotime('2024-01-01 10:00:00')],
+                ['timestamp' => strtotime('2024-01-01 12:00:00')]
             );
         $this->binaryStorageMock->method('readRecordsSequentially')
-            ->willReturn((static fn () => yield from [
+            ->willReturn((static fn() => yield from [
                 ['timestamp' => strtotime('2024-01-01 10:00:00')],
                 ['timestamp' => strtotime('2024-01-01 12:00:00')],
             ])());
 
-        // --- Mocks for Downloading the Gap ---
         $this->exchangeAdapterMock->method('supportsExchange')->willReturn(true);
         $this->exchangeAdapterMock->expects($this->once())
             ->method('fetchOhlcv')
             ->with(
-                $this->anything(),
-                $this->anything(),
-                '1h',
+                $this->anything(), $this->anything(), '1h',
                 $this->equalTo(new \DateTimeImmutable('2024-01-01 11:00:00')),
                 $this->equalTo(new \DateTimeImmutable('2024-01-01 11:59:59'))
             )
@@ -127,18 +121,15 @@ class OhlcvDownloaderTest extends TestCase
 
         $this->binaryStorageMock->method('getTempFilePath')->willReturn($finalPath . '.tmp');
         $this->binaryStorageMock->method('getMergedTempFilePath')->willReturn($finalPath . '.merged.tmp');
-
         $this->binaryStorageMock->method('createFile')
-            ->willReturnCallback(fn (string $path) => file_put_contents($path, str_repeat('a', 128)));
+            ->willReturnCallback(fn(string $path) => file_put_contents($path, str_repeat('a', 128)));
 
-        $this->binaryStorageMock->method('appendRecords')->willReturn(1);
+        $this->binaryStorageMock->method('streamAndCommitRecords')->willReturn(1);
+
         $this->binaryStorageMock->expects($this->once())->method('mergeAndWrite');
 
-        // --- Execute ---
         $this->downloader->download(
-            'binance',
-            'BTC/USDT',
-            '1h',
+            'binance', 'BTC/USDT', '1h',
             new \DateTimeImmutable('2024-01-01 10:00:00'),
             new \DateTimeImmutable('2024-01-01 12:00:00'),
             false
