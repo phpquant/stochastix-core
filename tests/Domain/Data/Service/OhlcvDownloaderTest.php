@@ -39,78 +39,100 @@ class OhlcvDownloaderTest extends TestCase
     public function testDownloadForNewFile(): void
     {
         $finalPath = $this->vfsRoot->url() . '/market/binance/BTC_USDT/1h.stchx';
-        $tempPath = $finalPath . '.tmp';
+        $tempChunkPath = $finalPath . '.tmp.chunk.0';
+        $mergedPath = $finalPath . '.merged.tmp.0';
 
-        // **THE FIX**: Create the parent directory structure so the service can create files within it.
         vfsStream::create(['market' => ['binance' => ['BTC_USDT' => []]]], $this->vfsRoot);
 
         $this->exchangeAdapterMock->method('supportsExchange')->willReturn(true);
         $this->exchangeAdapterMock->method('fetchOhlcv')->willReturn((static fn (): \Generator => yield ['ts' => 1])());
 
-        // Configure mocks to interact with the virtual filesystem
-        $this->binaryStorageMock->method('getTempFilePath')->willReturn($tempPath);
-        $this->binaryStorageMock->expects($this->once()) // Expect only ONE call
-        ->method('createFile')
-            ->willReturnCallback(function (string $path) {
-                // This callback ensures that when the service tries to create the temp file,
-                // it actually appears in the virtual filesystem with content, passing the filesize() check.
-                file_put_contents($path, str_repeat('a', 128));
-            });
+        $this->binaryStorageMock->method('getTempFilePath')->willReturn($finalPath . '.tmp');
+        $this->binaryStorageMock->method('getMergedTempFilePath')->willReturn($finalPath . '.merged.tmp');
 
-        $this->binaryStorageMock->method('appendRecords')->willReturn(1);
+        $this->binaryStorageMock->expects($this->once())
+            ->method('createFile')
+            ->willReturnCallback(fn(string $path) => file_put_contents($path, str_repeat('a', 128)));
 
-        // Assert the correct workflow for a new file
-        $this->binaryStorageMock->expects($this->never())->method('mergeAndWrite');
-        $this->binaryStorageMock->expects($this->once())->method('atomicRename')
-            ->with($tempPath, $finalPath);
+        $this->binaryStorageMock->method('streamAndCommitRecords')->willReturn(1);
+
+        $this->binaryStorageMock->expects($this->exactly(2))->method('atomicRename');
 
         $this->downloader->download(
-            'binance',
-            'BTC/USDT',
-            '1h',
-            new \DateTimeImmutable('2024-01-01'),
-            new \DateTimeImmutable('2024-01-02')
+            'binance', 'BTC/USDT', '1h',
+            new \DateTimeImmutable('2024-01-01'), new \DateTimeImmutable('2024-01-02')
         );
     }
 
-    public function testDownloadMergesWithExistingFile(): void
+    public function testDownloadWithForceOverwriteMergesWithExistingFile(): void
     {
         $finalPath = $this->vfsRoot->url() . '/market/binance/BTC_USDT/1h.stchx';
         $tempPath = $finalPath . '.tmp';
         $mergedPath = $finalPath . '.merged.tmp';
 
-        // **THE FIX**: Create the directory and the pre-existing file with content directly.
-        vfsStream::create([
-            'market' => [
-                'binance' => [
-                    'BTC_USDT' => [
-                        '1h.stchx' => str_repeat('a', 128), // File size > 64
-                    ],
-                ],
-            ],
-        ], $this->vfsRoot);
+        vfsStream::create(['market' => ['binance' => ['BTC_USDT' => ['1h.stchx' => str_repeat('a', 128)]]]], $this->vfsRoot);
 
         $this->exchangeAdapterMock->method('supportsExchange')->willReturn(true);
         $this->exchangeAdapterMock->method('fetchOhlcv')->willReturn((static fn (): \Generator => yield ['ts' => 1])());
         $this->binaryStorageMock->method('getTempFilePath')->willReturn($tempPath);
         $this->binaryStorageMock->method('getMergedTempFilePath')->willReturn($mergedPath);
+        $this->binaryStorageMock->method('createFile')->willReturnCallback(fn (string $path) => file_put_contents($path, str_repeat('b', 128)));
 
-        // The downloader will still create a temp file for the new data.
-        $this->binaryStorageMock->method('createFile')
-            ->willReturnCallback(fn (string $path) => file_put_contents($path, str_repeat('b', 128)));
-        $this->binaryStorageMock->method('appendRecords')->willReturn(1);
+        $this->binaryStorageMock->method('streamAndCommitRecords')->willReturn(1);
 
-        // Assert the correct workflow for a merge
         $this->binaryStorageMock->expects($this->once())->method('mergeAndWrite');
         $this->binaryStorageMock->expects($this->once())->method('atomicRename')
-            ->with($mergedPath, $finalPath);
+            ->with($this->stringEndsWith('.merged.tmp.0'), $finalPath);
+
 
         $this->downloader->download(
-            'binance',
-            'BTC/USDT',
-            '1h',
-            new \DateTimeImmutable('2024-01-01'),
-            new \DateTimeImmutable('2024-01-02')
+            'binance', 'BTC/USDT', '1h',
+            new \DateTimeImmutable('2024-01-01'), new \DateTimeImmutable('2024-01-02'),
+            true // Force overwrite
+        );
+    }
+
+    public function testDownloadFillsInternalGaps(): void
+    {
+        $finalPath = $this->vfsRoot->url() . '/market/binance/BTC_USDT/1h.stchx';
+        vfsStream::create(['market' => ['binance' => ['BTC_USDT' => ['1h.stchx' => str_repeat('a', 128)]]]], $this->vfsRoot);
+
+        $this->binaryStorageMock->method('readHeader')->willReturn(['numRecords' => 2]);
+        $this->binaryStorageMock->method('readRecordByIndex')
+            ->willReturnOnConsecutiveCalls(
+                ['timestamp' => strtotime('2024-01-01 10:00:00')],
+                ['timestamp' => strtotime('2024-01-01 12:00:00')]
+            );
+        $this->binaryStorageMock->method('readRecordsSequentially')
+            ->willReturn((static fn() => yield from [
+                ['timestamp' => strtotime('2024-01-01 10:00:00')],
+                ['timestamp' => strtotime('2024-01-01 12:00:00')],
+            ])());
+
+        $this->exchangeAdapterMock->method('supportsExchange')->willReturn(true);
+        $this->exchangeAdapterMock->expects($this->once())
+            ->method('fetchOhlcv')
+            ->with(
+                $this->anything(), $this->anything(), '1h',
+                $this->equalTo(new \DateTimeImmutable('2024-01-01 11:00:00')),
+                $this->equalTo(new \DateTimeImmutable('2024-01-01 11:59:59'))
+            )
+            ->willReturn((static fn (): \Generator => yield ['timestamp' => strtotime('2024-01-01 11:00:00')])());
+
+        $this->binaryStorageMock->method('getTempFilePath')->willReturn($finalPath . '.tmp');
+        $this->binaryStorageMock->method('getMergedTempFilePath')->willReturn($finalPath . '.merged.tmp');
+        $this->binaryStorageMock->method('createFile')
+            ->willReturnCallback(fn(string $path) => file_put_contents($path, str_repeat('a', 128)));
+
+        $this->binaryStorageMock->method('streamAndCommitRecords')->willReturn(1);
+
+        $this->binaryStorageMock->expects($this->once())->method('mergeAndWrite');
+
+        $this->downloader->download(
+            'binance', 'BTC/USDT', '1h',
+            new \DateTimeImmutable('2024-01-01 10:00:00'),
+            new \DateTimeImmutable('2024-01-01 12:00:00'),
+            false
         );
     }
 

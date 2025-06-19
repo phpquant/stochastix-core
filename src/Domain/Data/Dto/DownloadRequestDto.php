@@ -20,17 +20,16 @@ class DownloadRequestDto
         public string $startDate,
         #[Assert\Date(message: 'End date must be in Y-m-d format.')]
         public string $endDate,
+        public bool $forceOverwrite = false,
     ) {
     }
 
     public function validateDateRange(ExecutionContextInterface $context): void
     {
-        if ($this->startDate !== null && $this->endDate !== null) {
-            if ($this->endDate < $this->startDate) {
-                $context->buildViolation('End date must be after or the same as start date.')
-                    ->atPath('endDate')
-                    ->addViolation();
-            }
+        if ($this->startDate !== null && $this->endDate !== null && $this->endDate < $this->startDate) {
+            $context->buildViolation('End date must be after or the same as start date.')
+                ->atPath('endDate')
+                ->addViolation();
         }
     }
 }

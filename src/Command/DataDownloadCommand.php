@@ -62,6 +62,12 @@ class DataDownloadCommand extends Command
                 'E',
                 InputOption::VALUE_OPTIONAL,
                 'The UTC end date/time (Format: Y-m-d[THH:MM:SS]). Defaults to "now".'
+            )
+            ->addOption(
+                'force',
+                'f',
+                InputOption::VALUE_NONE,
+                'Force re-download and overwrite of the entire date range, even if data exists.'
             );
     }
 
@@ -74,6 +80,7 @@ class DataDownloadCommand extends Command
             $exchange = $input->getArgument('exchange');
             $symbol = $input->getArgument('symbol');
             $timeframe = $input->getArgument('timeframe');
+            $forceOverwrite = $input->getOption('force');
 
             $startDateStr = $input->getOption('start-date');
             $endDateStr = $input->getOption('end-date');
@@ -87,6 +94,10 @@ class DataDownloadCommand extends Command
                 $io->error('Start date must be strictly before the end date.');
 
                 return Command::INVALID;
+            }
+
+            if ($forceOverwrite) {
+                $io->warning('Force mode enabled: Existing data in the specified range will be overwritten.');
             }
 
             $io->title('🚀 Stochastix OHLCV Data Downloader 🚀');
@@ -116,7 +127,8 @@ class DataDownloadCommand extends Command
                 $symbol,
                 $timeframe,
                 $startDate,
-                $endDate
+                $endDate,
+                $forceOverwrite
             );
 
             $this->progressBar->finish();

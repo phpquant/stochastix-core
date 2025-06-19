@@ -76,7 +76,14 @@ final readonly class RunBacktestMessageHandler
 
     private function publishUpdate(string $topic, array $data): void
     {
-        $update = new Update($topic, json_encode($data, JSON_THROW_ON_ERROR));
-        $this->mercureHub->publish($update);
+        try {
+            $update = new Update($topic, json_encode($data, JSON_THROW_ON_ERROR));
+            $this->mercureHub->publish($update);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Failed to publish update to Mercure. The backtest will continue.', [
+                'topic' => $topic,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

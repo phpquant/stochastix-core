@@ -16,3 +16,12 @@ services:
             - '../src/**/Exception'
             - '../src/**/Event'
             - '../src/**/Model'
+
+    stochastix.download.cancel.cache:
+        class: Symfony\Component\Cache\Adapter\FilesystemAdapter
+        arguments:
+            - 'stochastix.download.cancel'
+            - 3600
+            - '%kernel.project_dir%/data/.cache'
+        tags:
+            - { name: 'cache.pool', namespace: 'stochastix.download' }

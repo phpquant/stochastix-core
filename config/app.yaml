@@ -1,4 +1,7 @@
 framework:
+    cache:
+        prefix_seed: 'stochastix.download'
+
     messenger:
         transports:
             stochastix: '%env(MESSENGER_TRANSPORT_DSN)%'

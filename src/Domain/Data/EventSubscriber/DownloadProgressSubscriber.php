@@ -2,6 +2,7 @@
 
 namespace Stochastix\Domain\Data\EventSubscriber;
 
+use Psr\Log\LoggerInterface;
 use Stochastix\Domain\Data\Event\DownloadProgressEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Mercure\HubInterface;
@@ -9,8 +10,10 @@ use Symfony\Component\Mercure\Update;
 
 final readonly class DownloadProgressSubscriber implements EventSubscriberInterface
 {
-    public function __construct(private HubInterface $mercureHub)
-    {
+    public function __construct(
+        private HubInterface $mercureHub,
+        private readonly LoggerInterface $logger,
+    ) {
     }
 
     public static function getSubscribedEvents(): array
@@ -40,7 +43,14 @@ final readonly class DownloadProgressSubscriber implements EventSubscriberInterf
             'message' => "Fetched {$event->recordsFetchedInBatch} records up to " . gmdate('Y-m-d H:i:s', $event->lastTimestamp),
         ];
 
-        $update = new Update($topic, json_encode($data, JSON_THROW_ON_ERROR));
-        $this->mercureHub->publish($update);
+        try {
+            $update = new Update($topic, json_encode($data, JSON_THROW_ON_ERROR));
+            $this->mercureHub->publish($update);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Failed to publish progress update to Mercure.', [
+                'jobId' => $event->jobId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

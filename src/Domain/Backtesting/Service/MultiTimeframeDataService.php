@@ -70,7 +70,7 @@ final readonly class MultiTimeframeDataService implements MultiTimeframeDataServ
             rtrim($this->baseDataPath, '/'),
             strtolower($exchangeId),
             strtoupper($sanitizedSymbol),
-            strtolower($timeframe)
+            $timeframe
         );
     }
 }
