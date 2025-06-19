@@ -580,29 +580,40 @@ final readonly class BinaryStorage implements BinaryStorageInterface
             // Seek to the end of the file to start appending records.
             fseek($handle, 0, SEEK_END);
 
-            foreach ($records as $record) {
-                $packedRecord = pack(
-                    self::RECORD_PACK_FORMAT,
-                    $record['timestamp'],
-                    $record['open'],
-                    $record['high'],
-                    $record['low'],
-                    $record['close'],
-                    $record['volume']
-                );
+            // This inner try/catch ensures progress is saved even if the generator is interrupted.
+            try {
+                foreach ($records as $record) {
+                    $packedRecord = pack(
+                        self::RECORD_PACK_FORMAT,
+                        $record['timestamp'],
+                        $record['open'],
+                        $record['high'],
+                        $record['low'],
+                        $record['close'],
+                        $record['volume']
+                    );
 
-                if (fwrite($handle, $packedRecord) !== self::RECORD_LENGTH_V1) {
-                    throw new StorageException("Failed to write complete record to '{$filePath}'.");
+                    if (fwrite($handle, $packedRecord) !== self::RECORD_LENGTH_V1) {
+                        throw new StorageException("Failed to write complete record to '{$filePath}'.");
+                    }
+                    ++$writtenCount;
+
+                    // Periodically update the record count in the header
+                    if ($writtenCount > 0 && $writtenCount % $commitInterval === 0) {
+                        $this->updateHeaderCountInPlace($handle, $writtenCount);
+                    }
                 }
-                ++$writtenCount;
-
-                // Periodically update the record count in the header
-                if ($writtenCount > 0 && $writtenCount % $commitInterval === 0) {
+            } catch (\Throwable $e) {
+                // The generator was interrupted (e.g., by cancellation).
+                // Before we stop, we must commit the progress we've made.
+                if ($writtenCount > 0) {
                     $this->updateHeaderCountInPlace($handle, $writtenCount);
                 }
+                // Re-throw the original exception to signal that the process was aborted.
+                throw $e;
             }
 
-            // Final update for any remaining records
+            // Final update if the loop completed successfully without exception.
             if ($writtenCount > 0) {
                 $this->updateHeaderCountInPlace($handle, $writtenCount);
             }
