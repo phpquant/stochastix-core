@@ -5,7 +5,9 @@ namespace Stochastix\Domain\Indicator\Model;
 use Ds\Map;
 use Stochastix\Domain\Common\Model\Series;
 use Stochastix\Domain\Plot\PlotDefinition;
+use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
+#[AutoconfigureTag]
 interface IndicatorInterface
 {
     public function calculateBatch(Map $dataframes): void;

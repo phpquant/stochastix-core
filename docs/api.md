@@ -537,3 +537,182 @@ This family of endpoints provides access to the raw, high-resolution time-series
     * **Error Responses:**
         * `404 Not Found`: If the `runId` is invalid or if the requested `{metric}` plot does not exist for that run.
         * `500 Internal Server Error`.
+
+---
+
+### Chart Exploration & Layouts
+
+This section details the endpoints for managing persistent chart layouts and fetching on-demand indicator data for interactive analysis.
+
+* **`GET /api/charts/available-indicators`**
+    * **Description:** Fetches a categorized list of all indicators available for plotting. This includes "Built-in" (from the TA-Lib library) and "Custom" (user-defined PHP classes) indicators.
+    * **Requires:** None
+    * **Request Body:** None
+    * **Success Response:** `200 OK`
+    * **Example Success Response Body:**
+        ```json
+        {
+          "builtIn": [
+            {
+              "name": "Simple Moving Average",
+              "description": null,
+              "alias": "sma",
+              "type": "talib",
+              "inputs": [{"name": "timePeriod", "type": "integer"}]
+            },
+            {
+              "name": "Relative Strength Index",
+              "description": null,
+              "alias": "rsi",
+              "type": "talib",
+              "inputs": [{"name": "timePeriod", "type": "integer"}]
+            }
+          ],
+          "custom": [
+            {
+                "name": "My Custom Volatility",
+                "description": "A custom volatility indicator.",
+                "alias": "App\\Indicator\\MyVolatilityIndicator",
+                "type": "custom",
+                "inputs": [
+                    { "name": "period", "description": "Lookback period", "type": "integer", "defaultValue": 14 }
+                ]
+            }
+          ]
+        }
+        ```
+    * **Error Responses:**
+        * `500 Internal Server Error`: If an error occurs during indicator discovery.
+
+* **`POST /api/charts/indicators`**
+    * **Description:** The core on-demand calculation endpoint. It takes a market context (symbol, timeframe) and a list of indicator configurations, and returns the OHLCV data for the requested window along with the calculated indicator series data.
+    * **Requires:** None
+    * **Request Body:** (`Stochastix\Domain\Chart\Dto\ChartIndicatorRequestDto`)
+    * **Example Request Body:**
+        ```json
+        {
+          "exchangeId": "binance",
+          "symbol": "BTC/USDT",
+          "timeframe": "1h",
+          "countback": 500,
+          "indicators": [
+            {
+              "key": "ema_fast",
+              "type": "talib",
+              "function": "ema",
+              "params": { "timePeriod": 10 },
+              "source": "close"
+            },
+            {
+              "key": "rsi_14",
+              "type": "talib",
+              "function": "rsi",
+              "params": { "timePeriod": 14 },
+              "source": "close"
+            }
+          ]
+        }
+        ```
+    * **Success Response:** `200 OK`
+    * **Example Success Response Body:**
+        ```json
+        {
+          "ohlcv": [
+            { "time": 1738454400, "open": 3000.0, "high": 3005.0, "low": 2998.0, "close": 3000.0 }
+          ],
+          "indicators": {
+            "ema_fast": {
+              "value": [{ "time": 1738454400, "value": 2995.5 }]
+            },
+            "rsi_14": {
+              "value": [{ "time": 1738454400, "value": 55.45 }]
+            }
+          }
+        }
+        ```
+    * **Error Responses:**
+        * `404 Not Found`: If the underlying market data file (`.stchx`) does not exist.
+        * `500 Internal Server Error`: For any calculation errors.
+
+* **`POST /api/charts/layouts`**
+    * **Description:** Creates and saves a new chart layout.
+    * **Requires:** None
+    * **Request Body:** (`Stochastix\Domain\Chart\Dto\SaveLayoutRequestDto`)
+    * **Example Request Body:**
+        ```json
+        {
+            "name": "My ETH Volatility Layout",
+            "symbol": "ETH/USDT",
+            "timeframe": "4h",
+            "indicators": [
+                { "key": "bbands_20", "type": "talib", "function": "bbands", "params": { "timePeriod": 20, "nbDevUp": 2, "nbDevDn": 2 } },
+                { "key": "atr_14", "type": "talib", "function": "atr", "params": { "timePeriod": 14 } }
+            ]
+        }
+        ```
+    * **Success Response:** `201 Created`
+    * **Success Response Body:** The full, newly created `ChartLayout` entity, including its new ID and timestamps.
+
+* **`GET /api/charts/layouts`**
+    * **Description:** Retrieves a list of all saved chart layouts, sorted by most recently updated.
+    * **Requires:** None
+    * **Request Body:** None
+    * **Success Response:** `200 OK`
+    * **Example Success Response Body:**
+        ```json
+        [
+            {
+                "id": "01J0Z7X2J8Y4Z6T8A9E1G4H2J8",
+                "name": "My BTC Daily Setup",
+                "symbol": "BTC/USDT",
+                "timeframe": "1d",
+                "indicators": [
+                    {
+                        "key": "ema_fast",
+                        "type": "talib",
+                        "function": "ema",
+                        "params": {
+                            "timePeriod": 12
+                        },
+                        "source": "close"
+                    },
+                    {
+                        "key": "rsi_main",
+                        "type": "talib",
+                        "function": "rsi",
+                        "params": {
+                            "timePeriod": 14
+                        },
+                        "source": "close"
+                    }
+                ],
+                "createdAt": "2025-06-20T14:30:00+00:00",
+                "updatedAt": "2025-06-20T15:00:00+00:00"
+            }
+        ]
+        ```
+
+* **`GET /api/charts/layouts/{id}`**
+    * **Description:** Retrieves the full configuration of a single chart layout by its ID.
+    * **URL Parameters:**
+        * `id` (string, required): The ULID of the chart layout.
+    * **Success Response:** `200 OK`
+    * **Success Response Body:** A single `ChartLayout` object.
+
+* **`PUT /api/charts/layouts/{id}`**
+    * **Description:** Updates an existing chart layout. The entire new layout configuration must be sent.
+    * **URL Parameters:**
+        * `id` (string, required): The ULID of the chart layout to update.
+    * **Request Body:** (`Stochastix\Domain\Chart\Dto\SaveLayoutRequestDto`)
+    * **Success Response:** `200 OK`
+    * **Success Response Body:** The full, updated `ChartLayout` object.
+    * **Error Responses:**
+        * `404 Not Found`: If the layout ID does not exist.
+
+* **`DELETE /api/charts/layouts/{id}`**
+    * **Description:** Deletes a chart layout.
+    * **URL Parameters:**
+        * `id` (string, required): The ULID of the chart layout to delete.
+    * **Success Response:** `240 No Content`
+    * **Error Responses:**
+        * `404 Not Found`: If the layout ID does not exist.
