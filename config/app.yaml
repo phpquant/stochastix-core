@@ -17,3 +17,20 @@ framework:
         routing:
             'Stochastix\Domain\Backtesting\Message\RunBacktestMessage': stochastix
             'Stochastix\Domain\Data\Message\DownloadDataMessage': stochastix
+
+stof_doctrine_extensions:
+    default_locale: en_US
+    orm:
+        default:
+            timestampable: true
+
+doctrine:
+    orm:
+        mappings:
+            StochastixBundle:
+                is_bundle: true
+                type: attribute
+                dir: 'src/'
+                prefix: 'Stochastix\'
+                alias: StochastixBundle
+
