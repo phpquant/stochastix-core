@@ -4,7 +4,7 @@ namespace Stochastix\Domain\Chart\Entity;
 
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
-use Gedmo\Timestampable\Traits\Timestampable;
+use Gedmo\Timestampable\Traits\TimestampableEntity;
 use Stochastix\Domain\Chart\Repository\ChartLayoutRepository;
 use Symfony\Component\Uid\Ulid;
 
@@ -12,7 +12,7 @@ use Symfony\Component\Uid\Ulid;
 #[ORM\Table(name: 'chart_layout')]
 class ChartLayout
 {
-    use Timestampable;
+    use TimestampableEntity;
 
     #[ORM\Id]
     #[ORM\Column(type: 'ulid', unique: true)]
